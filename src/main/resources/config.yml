@@ -1,0 +1,9 @@
+season-id: vardera
+world: lobby
+keep:
+  - "group.*"
+  - "rpchar.group.*"
+  - "armourshop.*"
+  - "rulequiz.completed"
+  - "tfmc.staff"
+  - "tfmc.map.staff"
