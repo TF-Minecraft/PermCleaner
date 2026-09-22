@@ -16,8 +16,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.spigotmc</groupId>
-            <artifactId>spigot-api</artifactId>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-api</artifactId>
             <version>1.21.10-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
@@ -56,8 +56,8 @@
 
     <repositories>
         <repository>
-            <id>spigot-snapshots</id>
-            <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
         </repository>
     </repositories>
 
@@ -90,7 +90,7 @@
                 <version>3.5.2</version>
                 <configuration>
                     <classpathDependencyExcludes>
-                        <classpathDependencyExclude>org.spigotmc:spigot-api</classpathDependencyExclude>
+                        <classpathDependencyExclude>io.papermc.paper:paper-api</classpathDependencyExclude>
                     </classpathDependencyExcludes>
                 </configuration>
             </plugin>
