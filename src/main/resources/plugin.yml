@@ -1,5 +1,5 @@
 main: net.tfminecraft.permcleaner.PermCleaner
-api-version: 1.21
+api-version: '1.21.10'
 name: PermCleaner
 version: ${project.version}
 author: TFMC
