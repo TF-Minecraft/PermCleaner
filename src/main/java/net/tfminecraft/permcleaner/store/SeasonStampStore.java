@@ -8,8 +8,8 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
-import me.Plugins.TLibs.database.SqliteDatabase;
-import me.Plugins.TLibs.database.SqliteDatabaseException;
+import net.tfminecraft.tlibs.database.SqliteDatabase;
+import net.tfminecraft.tlibs.database.SqliteDatabaseException;
 
 public final class SeasonStampStore {
 
