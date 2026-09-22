@@ -12,9 +12,6 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <tfmc.refs>D:/Documents/TFMC/ReferenceLibs</tfmc.refs>
-        <tfmc.builds>D:/Documents/TFMC/Builds/PermCleaner</tfmc.builds>
-        <tfmc.tlibs>D:/Documents/TFMC/Builds/TLibs</tfmc.tlibs>
     </properties>
 
     <dependencies>
@@ -23,14 +20,14 @@
             <artifactId>spigot-api</artifactId>
             <version>1.21.8</version>
             <scope>system</scope>
-            <systemPath>${tfmc.refs}/spigot-api.jar</systemPath>
+            <systemPath>${project.basedir}/libs/spigot-api.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>local</groupId>
             <artifactId>TLibs</artifactId>
             <version>1.0</version>
             <scope>system</scope>
-            <systemPath>${tfmc.tlibs}/TLibs.jar</systemPath>
+            <systemPath>${project.basedir}/libs/TLibs.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>net.luckperms</groupId>
@@ -53,6 +50,18 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes><include>plugin.yml</include></includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes><exclude>plugin.yml</exclude></excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -64,25 +73,7 @@
                     </classpathDependencyExcludes>
                 </configuration>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <version>3.1.0</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals><goal>run</goal></goals>
-                        <configuration>
-                            <target>
-                                <mkdir dir="${tfmc.builds}"/>
-                                <copy file="${project.build.directory}/${project.build.finalName}.jar"
-                                    tofile="${tfmc.builds}/${project.build.finalName}.jar"/>
-                            </target>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
+</plugins>
     </build>
 
 </project>

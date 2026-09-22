@@ -1,7 +1,7 @@
 main: net.tfminecraft.permcleaner.PermCleaner
 api-version: 1.21
 name: PermCleaner
-version: 1.0.0
+version: ${project.version}
 author: TFMC
 
 depend: [TLibs, LuckPerms]
