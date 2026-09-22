@@ -10,7 +10,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import me.Plugins.TLibs.database.SqliteProvider;
+import net.tfminecraft.tlibs.database.SqliteProvider;
 
 class SeasonStampStoreTest {
 
