@@ -32,6 +32,8 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 		this.plugin = plugin;
 	}
 
+	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
+	@SuppressWarnings("deprecation")
 	@Override
 	public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
 		if (args.length == 0) {
@@ -50,6 +52,8 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 		return true;
 	}
 
+	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
+	@SuppressWarnings("deprecation")
 	private void reload(CommandSender sender) {
 		plugin.reloadConfig();
 		plugin.reloadKeepList();
@@ -58,6 +62,8 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 				+ ChatColor.GREEN + " world " + ChatColor.WHITE + plugin.displayWorld());
 	}
 
+	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
+	@SuppressWarnings("deprecation")
 	private void status(CommandSender sender, String[] args) {
 		Target target = resolveTarget(sender, args);
 		if (target == null) {
@@ -78,6 +84,8 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 				+ ChatColor.GREEN + " gate " + ChatColor.WHITE + (online == null ? "offline" : (worldOk ? "pass" : "fail")));
 	}
 
+	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
+	@SuppressWarnings("deprecation")
 	private void inspect(CommandSender sender, String[] args) {
 		Target target = resolveTarget(sender, args);
 		if (target == null) {
@@ -110,6 +118,8 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 		});
 	}
 
+	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
+	@SuppressWarnings("deprecation")
 	private void clean(CommandSender sender, String[] args, boolean force) {
 		Target target = resolveTarget(sender, args);
 		if (target == null) {
@@ -136,6 +146,8 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 		}
 	}
 
+	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
+	@SuppressWarnings("deprecation")
 	private Target resolveTarget(CommandSender sender, String[] args) {
 		if (args.length < 2) {
 			if (sender instanceof Player player) {
