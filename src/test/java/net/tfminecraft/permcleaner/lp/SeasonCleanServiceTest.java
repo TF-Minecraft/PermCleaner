@@ -437,6 +437,10 @@ class SeasonCleanServiceTest {
 		luckPerms.when(LuckPermsProvider::get).thenThrow(new NoClassDefFoundError("provider unloaded"));
 		assertTrue(service.startClean(PLAYER, "Alex", callback));
 		assertThrows(NoClassDefFoundError.class, this::runAsync);
+		assertEquals(1, mainTasks.size());
+		mainTasks.remove().run();
+		assertEquals(1, results.size());
+		assertNull(results.get(0));
 		assertTrue(service.startClean(PLAYER, "Alex", callback));
 		verifyNoInteractions(stamps);
 	}
@@ -487,6 +491,32 @@ class SeasonCleanServiceTest {
 		runAll();
 		verify(users, org.mockito.Mockito.times(2)).saveUser(user);
 		verify(stamps).setSeason(PLAYER, "vardera");
+	}
+
+	@Test
+	void errorReportsFailureOnceEvenIfFailureCallbackThrows() {
+		bukkit.when(Bukkit::isPrimaryThread).thenReturn(true);
+		NoClassDefFoundError original = new NoClassDefFoundError("provider unloaded");
+		IllegalStateException secondary = new IllegalStateException("consumer failed");
+		luckPerms.when(LuckPermsProvider::get).thenThrow(original);
+		int[] calls = {0};
+		assertTrue(service.startClean(PLAYER, "Alex", result -> { assertNull(result); calls[0]++; throw secondary; }));
+		assertSame(original, assertThrows(NoClassDefFoundError.class, this::runAsync));
+		assertEquals(1, calls[0]);
+		assertEquals(List.of(secondary), List.of(original.getSuppressed()));
+		assertTrue(service.startClean(PLAYER, "Alex", callback));
+	}
+
+	@Test
+	void failureNotificationRejectionCannotMaskTheOriginalWorkerError() {
+		NoClassDefFoundError original = new NoClassDefFoundError("provider unloaded");
+		IllegalStateException secondary = new IllegalStateException("scheduler stopped");
+		luckPerms.when(LuckPermsProvider::get).thenThrow(original);
+		when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenThrow(secondary);
+		assertTrue(service.startClean(PLAYER, "Alex", callback));
+		assertSame(original, assertThrows(NoClassDefFoundError.class, this::runAsync));
+		assertEquals(List.of(secondary), List.of(original.getSuppressed()));
+		assertTrue(service.startClean(PLAYER, "Alex", callback));
 	}
 
 	private void givenNodes(Node... nodes) {

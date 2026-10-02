@@ -109,7 +109,11 @@ public final class SeasonCleanService {
 			finishFailed(uuid, onMain);
 			return;
 		} catch (Error failure) {
-			inFlight.remove(uuid);
+			try {
+				finishFailed(uuid, onMain);
+			} catch (RuntimeException | Error notificationFailure) {
+				if (notificationFailure != failure) failure.addSuppressed(notificationFailure);
+			}
 			throw failure;
 		}
 		if (!plugin.isEnabled()) {

@@ -1,10 +1,10 @@
 package net.tfminecraft.permcleaner.command;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -153,6 +153,10 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 			return;
 		}
 		String name = args[1];
+		if (name.isBlank()) {
+			sender.sendMessage(ChatColor.RED + "Unknown player " + name);
+			return;
+		}
 		Player online = Bukkit.getPlayerExact(name);
 		if (online != null) {
 			resolved.accept(new Target(online.getUniqueId(), online.getName()));
@@ -163,31 +167,29 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 			resolveOffline(sender, name, cached, resolved);
 			return;
 		}
-		if (!Bukkit.getOnlineMode()) {
-			UUID uuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
-			resolveOffline(sender, name, Bukkit.getOfflinePlayer(uuid), resolved);
-			return;
-		}
+
 		try {
-			Bukkit.createProfile(name).update().whenComplete((profile, failure) -> {
+			// Paper's resolver also honors proxy online-mode and offline UUID policy.
+			CompletableFuture.supplyAsync(() -> Bukkit.getPlayerUniqueId(name),
+				task -> Bukkit.getScheduler().runTaskAsynchronously(plugin, task)).whenComplete((uuid, failure) -> {
 				if (!plugin.isEnabled()) return;
 				try {
 					Bukkit.getScheduler().runTask(plugin, () -> {
 						if (!plugin.isEnabled() || (sender instanceof Player player && !player.isOnline())) return;
 						if (failure != null) {
 							sender.sendMessage(ChatColor.RED + "Player lookup failed for " + name + ". Please try again.");
-						} else if (profile.getUniqueId() == null) {
+						} else if (uuid == null) {
 							sender.sendMessage(ChatColor.RED + "Unknown player " + name);
 						} else {
-							resolveOffline(sender, name, Bukkit.getOfflinePlayer(profile.getUniqueId()), resolved);
+							resolveOffline(sender, name, Bukkit.getOfflinePlayer(uuid), resolved);
 						}
 					});
 				} catch (IllegalPluginAccessException ignored) {
 					// The plugin was disabled between completing the lookup and scheduling the result.
 				}
 			});
-		} catch (IllegalArgumentException invalidName) {
-			sender.sendMessage(ChatColor.RED + "Unknown player " + name);
+		} catch (IllegalPluginAccessException ignored) {
+			// The plugin was disabled before the lookup could be submitted.
 		}
 	}
 

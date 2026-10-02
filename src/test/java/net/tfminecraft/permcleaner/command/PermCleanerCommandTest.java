@@ -19,8 +19,6 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.concurrent.CompletableFuture;
-import com.destroystokyo.paper.profile.PlayerProfile;
 import org.bukkit.scheduler.BukkitScheduler;
 import org.bukkit.plugin.IllegalPluginAccessException;
 import java.util.List;
@@ -68,6 +66,7 @@ class PermCleanerCommandTest {
 	private PermCleanerCommand executor;
 	private BukkitScheduler scheduler;
 	private final Deque<Runnable> mainTasks = new ArrayDeque<>();
+	private final Deque<Runnable> asyncTasks = new ArrayDeque<>();
 
 	@BeforeEach
 	void setUp() {
@@ -101,6 +100,9 @@ class PermCleanerCommandTest {
 			mainTasks.add(invocation.getArgument(1)); return null;
 		});
 		bukkit.when(Bukkit::getScheduler).thenReturn(scheduler);
+		when(scheduler.runTaskAsynchronously(eq(plugin), any(Runnable.class))).thenAnswer(invocation -> {
+			asyncTasks.add(invocation.getArgument(1)); return null;
+		});
 		bukkit.when(Bukkit::getOnlinePlayers).thenAnswer(invocation -> List.of(alex, bea));
 
 		executor = new PermCleanerCommand(plugin);
@@ -394,83 +396,71 @@ class PermCleanerCommandTest {
 
 	@Test
 	void uncachedPlayerResolvesAsynchronouslyAndContinuesOnlyOnMainThread() {
-		CompletableFuture<PlayerProfile> lookup = pendingLookup("Cai");
-		UUID uuid = offline("Cai", "Cai");
-		OfflinePlayer offline = Bukkit.getOfflinePlayerIfCached("Cai");
-		bukkit.when(() -> Bukkit.getOfflinePlayer(uuid)).thenReturn(offline);
-		bukkit.when(() -> Bukkit.getOfflinePlayerIfCached("Cai")).thenReturn(null);
+		OfflinePlayer offline = uncached("Cai", ALEX);
 		run(console, "clean", "Cai");
 		assertTrue(messages(console).isEmpty());
+		bukkit.verify(() -> Bukkit.getPlayerUniqueId("Cai"), never());
+		verify(offline, never()).hasPlayedBefore();
 		verify(cleaner, never()).startClean(any(), anyString(), any());
-		PlayerProfile result = mock(PlayerProfile.class);
-		when(result.getUniqueId()).thenReturn(uuid);
-		lookup.complete(result);
+		asyncTasks.remove().run();
 		verify(cleaner, never()).startClean(any(), anyString(), any());
+		verify(offline, never()).hasPlayedBefore();
 		assertEquals(1, mainTasks.size());
 		drainMain();
-		verify(cleaner).startClean(eq(uuid), eq("Cai"), any());
+		verify(cleaner).startClean(eq(ALEX), eq("Cai"), any());
 		bukkit.verify(() -> Bukkit.getOfflinePlayer(anyString()), never());
 	}
 
 	@Test
 	void incompleteOrFailedLookupDoesNotCleanAnotherIdentity() {
-		CompletableFuture<PlayerProfile> missing = pendingLookup("Missing");
+		bukkit.when(() -> Bukkit.getOfflinePlayerIfCached(anyString())).thenReturn(null);
 		run(console, "force", "Missing");
-		missing.complete(mock(PlayerProfile.class));
-		drainMain();
-		CompletableFuture<PlayerProfile> failed = pendingLookup("Failed");
+		asyncTasks.remove().run(); drainMain();
+		bukkit.when(() -> Bukkit.getPlayerUniqueId("Failed")).thenThrow(new IllegalStateException("network offline"));
 		run(console, "inspect", "Failed");
-		failed.completeExceptionally(new IllegalStateException("network offline"));
-		drainMain();
+		asyncTasks.remove().run(); drainMain();
 		assertEquals(List.of(RED + "Unknown player Missing", RED + "Player lookup failed for Failed. Please try again."), messages(console));
 		verify(cleaner, never()).startClean(any(), anyString(), any());
 		verify(cleaner, never()).inspect(any(), any());
 	}
 
 	@Test
-	void offlineModeUsesTheServersOfflineUuidWithoutNetworkLookup() {
+	void offlineModeUsesTheServersOfflineUuid() {
 		bukkit.when(Bukkit::getOnlineMode).thenReturn(false);
-		bukkit.when(() -> Bukkit.getOfflinePlayerIfCached("Cai")).thenReturn(null);
 		UUID uuid = UUID.nameUUIDFromBytes("OfflinePlayer:Cai".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-		OfflinePlayer offline = mock(OfflinePlayer.class);
-		when(offline.getUniqueId()).thenReturn(uuid);
-		when(offline.hasPlayedBefore()).thenReturn(true);
-		when(offline.getName()).thenReturn("Cai");
-		bukkit.when(() -> Bukkit.getOfflinePlayer(uuid)).thenReturn(offline);
+		uncached("Cai", uuid);
 		run(console, "inspect", "Cai");
+		asyncTasks.remove().run(); drainMain();
 		verify(cleaner).inspect(eq(uuid), any());
-		bukkit.verify(() -> Bukkit.createProfile(anyString()), never());
+		bukkit.verify(() -> Bukkit.getPlayerUniqueId("Cai"));
 	}
 
 	@Test
-	void invalidProfileNameIsReportedWithoutThrowing() {
-		bukkit.when(() -> Bukkit.getOfflinePlayerIfCached("bad/name")).thenReturn(null);
-		bukkit.when(() -> Bukkit.createProfile("bad/name")).thenThrow(new IllegalArgumentException("invalid name"));
-		run(console, "status", "bad/name");
-		assertEquals(List.of(RED + "Unknown player bad/name"), messages(console));
+	void blankNameIsReportedWithoutThrowingOrScheduling() {
+		run(console, "status", " ");
+		assertEquals(List.of(RED + "Unknown player  "), messages(console));
+		assertTrue(asyncTasks.isEmpty());
 	}
 
 	@Test
 	void completedLookupIsDroppedAfterDisableOrSenderDisconnect() {
-		CompletableFuture<PlayerProfile> lookup = pendingLookup("Cai");
+		uncached("Cai", ALEX);
 		run(alex, "clean", "Cai");
 		when(alex.isOnline()).thenReturn(false);
-		lookup.complete(mock(PlayerProfile.class));
-		drainMain();
+		asyncTasks.remove().run(); drainMain();
 		assertTrue(messages(alex).isEmpty());
-		lookup = pendingLookup("Dee");
-		run(console, "clean", "Dee");
+		run(console, "clean", "Cai");
 		when(plugin.isEnabled()).thenReturn(false);
-		lookup.complete(mock(PlayerProfile.class));
+		asyncTasks.remove().run();
 		assertTrue(mainTasks.isEmpty());
 		verify(cleaner, never()).startClean(any(), anyString(), any());
 	}
 
 	@Test
 	void disableBetweenLookupAndMainCallbackCancelsContinuation() {
-		CompletableFuture<PlayerProfile> lookup = pendingLookup("Cai");
+		uncached("Cai", ALEX);
 		run(console, "clean", "Cai");
-		lookup.complete(mock(PlayerProfile.class));
+		asyncTasks.remove().run();
 		when(plugin.isEnabled()).thenReturn(false);
 		drainMain();
 		assertTrue(messages(console).isEmpty());
@@ -478,21 +468,44 @@ class PermCleanerCommandTest {
 
 	@Test
 	void schedulerDisableRaceDropsLookupResult() {
-		CompletableFuture<PlayerProfile> lookup = pendingLookup("Cai");
+		uncached("Cai", ALEX);
 		when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenThrow(new IllegalPluginAccessException("disabled"));
 		run(console, "clean", "Cai");
-		lookup.complete(mock(PlayerProfile.class));
+		asyncTasks.remove().run();
 		assertTrue(messages(console).isEmpty());
 		verify(cleaner, never()).startClean(any(), anyString(), any());
 	}
 
-	private CompletableFuture<PlayerProfile> pendingLookup(String name) {
-		PlayerProfile profile = mock(PlayerProfile.class);
-		CompletableFuture<PlayerProfile> result = new CompletableFuture<>();
-		when(profile.update()).thenReturn(result);
+	@Test
+	void disabledSchedulerDoesNotSubmitNameLookup() {
+		uncached("Cai", ALEX);
+		when(scheduler.runTaskAsynchronously(eq(plugin), any(Runnable.class))).thenThrow(new IllegalPluginAccessException("disabled"));
+		run(console, "clean", "Cai");
+		assertTrue(asyncTasks.isEmpty());
+		bukkit.verify(() -> Bukkit.getPlayerUniqueId(anyString()), never());
+	}
+
+	@Test
+	void uncachedProxyPlayerUsesServerIdentityWhenBackendOnlineModeIsFalse() {
+		bukkit.when(Bukkit::getOnlineMode).thenReturn(false);
+		uncached("Cai", ALEX);
+		run(console, "clean", "Cai");
+		assertEquals(1, asyncTasks.size(), "Identity lookup must defer to Paper's proxy-aware resolver");
+		verify(cleaner, never()).startClean(any(), anyString(), any());
+		asyncTasks.remove().run(); drainMain();
+		verify(cleaner).startClean(eq(ALEX), eq("Cai"), any());
+		bukkit.verify(() -> Bukkit.getOfflinePlayer(ALEX));
+	}
+
+	private OfflinePlayer uncached(String name, UUID uuid) {
 		bukkit.when(() -> Bukkit.getOfflinePlayerIfCached(name)).thenReturn(null);
-		bukkit.when(() -> Bukkit.createProfile(name)).thenReturn(profile);
-		return result;
+		bukkit.when(() -> Bukkit.getPlayerUniqueId(name)).thenReturn(uuid);
+		OfflinePlayer offline = mock(OfflinePlayer.class);
+		when(offline.hasPlayedBefore()).thenReturn(true);
+		when(offline.getUniqueId()).thenReturn(uuid);
+		when(offline.getName()).thenReturn(name);
+		bukkit.when(() -> Bukkit.getOfflinePlayer(uuid)).thenReturn(offline);
+		return offline;
 	}
 
 	private void drainMain() {
