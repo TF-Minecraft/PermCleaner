@@ -519,6 +519,33 @@ class SeasonCleanServiceTest {
 		assertTrue(service.startClean(PLAYER, "Alex", callback));
 	}
 
+	@Test
+	void rejectedStampSubmissionNotifiesFailureBeforeAllowingRetry() {
+		IllegalStateException rejected = new IllegalStateException("stamp task rejected");
+		when(scheduler.runTask(eq(plugin), any(Runnable.class)))
+			.thenThrow(rejected).thenAnswer(invocation -> { mainTasks.add(invocation.getArgument(1)); return null; });
+		assertTrue(service.startClean(PLAYER, "Alex", callback));
+		assertSame(rejected, assertThrows(IllegalStateException.class, this::runAsync));
+		assertEquals(1, mainTasks.size());
+		mainTasks.remove().run();
+		assertEquals(1, results.size());
+		assertNull(results.get(0));
+		verifyNoInteractions(stamps);
+		assertTrue(service.startClean(PLAYER, "Alex", callback));
+	}
+
+	@Test
+	void rejectedStampSubmissionPreservesOriginalWhenNotificationThrows() {
+		bukkit.when(Bukkit::isPrimaryThread).thenReturn(true);
+		IllegalStateException rejected = new IllegalStateException("stamp task rejected");
+		IllegalArgumentException consumerFailure = new IllegalArgumentException("consumer failed");
+		when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenThrow(rejected);
+		assertTrue(service.startClean(PLAYER, "Alex", result -> { assertNull(result); throw consumerFailure; }));
+		assertSame(rejected, assertThrows(IllegalStateException.class, this::runAsync));
+		assertEquals(List.of(consumerFailure), List.of(rejected.getSuppressed()));
+		assertTrue(service.startClean(PLAYER, "Alex", callback));
+	}
+
 	private void givenNodes(Node... nodes) {
 		when(data.toCollection()).thenReturn(List.of(nodes));
 	}

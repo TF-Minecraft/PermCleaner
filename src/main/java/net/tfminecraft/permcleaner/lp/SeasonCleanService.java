@@ -109,11 +109,7 @@ public final class SeasonCleanService {
 			finishFailed(uuid, onMain);
 			return;
 		} catch (Error failure) {
-			try {
-				finishFailed(uuid, onMain);
-			} catch (RuntimeException | Error notificationFailure) {
-				if (notificationFailure != failure) failure.addSuppressed(notificationFailure);
-			}
+			notifyFailure(uuid, onMain, failure);
 			throw failure;
 		}
 		if (!plugin.isEnabled()) {
@@ -123,8 +119,16 @@ public final class SeasonCleanService {
 		try {
 			Bukkit.getScheduler().runTask(plugin, () -> stampAndFinish(uuid, name, seasonId, result, onMain));
 		} catch (RuntimeException | Error failure) {
-			inFlight.remove(uuid);
+			notifyFailure(uuid, onMain, failure);
 			throw failure;
+		}
+	}
+
+	private void notifyFailure(UUID uuid, Consumer<CleanResult> onMain, Throwable failure) {
+		try {
+			finishFailed(uuid, onMain);
+		} catch (RuntimeException | Error notificationFailure) {
+			if (notificationFailure != failure) failure.addSuppressed(notificationFailure);
 		}
 	}
 
