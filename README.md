@@ -30,3 +30,7 @@ Copyright (c) 2026 TF-Minecraft contributors.
 TF-Minecraft-authored material in this repository is licensed under the
 [Artistic License 2.0](LICENSE). Third-party dependencies and bundled material
 retain their own licenses.
+
+## Tests and coverage
+
+Run `mvn clean verify` with Java 21 after installing the pinned dependencies. JaCoCo checks 100% executable runtime line coverage with no production-code exclusions. Instruction and branch coverage are reported separately in `target/site/jacoco/`; CI uploads the report for every build and release.

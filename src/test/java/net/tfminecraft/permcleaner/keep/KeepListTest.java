@@ -3,6 +3,7 @@ package net.tfminecraft.permcleaner.keep;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -70,5 +71,33 @@ class KeepListTest {
 	void blankAndNullAreNotKept() {
 		assertFalse(keep.keeps(null));
 		assertFalse(keep.keeps("  "));
+	}
+
+	@Test
+	void productionListIsNotEmpty() {
+		assertFalse(keep.isEmpty());
+	}
+
+	@Test
+	void nullPatternsKeepNothing() {
+		KeepList empty = KeepList.fromPatterns(null);
+		assertTrue(empty.isEmpty());
+		assertFalse(empty.keeps("group.default"));
+	}
+
+	@Test
+	void skipsBlankAndMalformedPatterns() {
+		KeepList skipped = KeepList.fromPatterns(Arrays.asList(null, "  ", ".*", " .* ", "a*.*", "a*b", "*"));
+		assertTrue(skipped.isEmpty());
+	}
+
+	@Test
+	void trimsPatternsAndMatchesPrefixCaseInsensitive() {
+		KeepList trimmed = KeepList.fromPatterns(List.of("  Rpchar.* ", " Tfmc.Staff "));
+		assertTrue(trimmed.keeps("rpchar"));
+		assertTrue(trimmed.keeps(" RPCHAR.Group.Noble "));
+		assertTrue(trimmed.keeps("tfmc.staff"));
+		assertFalse(trimmed.keeps("rpcharacters"));
+		assertFalse(trimmed.keeps("tfmc.staff.extra"));
 	}
 }
