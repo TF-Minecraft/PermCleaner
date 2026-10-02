@@ -105,8 +105,8 @@ public final class SeasonCleanService {
 			// Persist even a no-op retry before recording the season as complete.
 			api.getUserManager().saveUser(user).join();
 		} catch (Exception e) {
+			notifyFailure(uuid, onMain, e);
 			plugin.getLogger().log(Level.WARNING, "Failed to clean permissions for " + name, e);
-			finishFailed(uuid, onMain);
 			return;
 		} catch (Error failure) {
 			notifyFailure(uuid, onMain, failure);

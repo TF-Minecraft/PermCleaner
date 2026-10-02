@@ -546,6 +546,34 @@ class SeasonCleanServiceTest {
 		assertTrue(service.startClean(PLAYER, "Alex", callback));
 	}
 
+	@Test
+	void ordinaryWorkerFailureRetainsThrowingNotificationAndAllowsRetry() {
+		bukkit.when(Bukkit::isPrimaryThread).thenReturn(true);
+		IllegalStateException original = new IllegalStateException("provider unavailable");
+		IllegalArgumentException secondary = new IllegalArgumentException("consumer failed");
+		luckPerms.when(LuckPermsProvider::get).thenThrow(original);
+		int[] calls = {0};
+		assertTrue(service.startClean(PLAYER, "Alex", result -> { assertNull(result); calls[0]++; throw secondary; }));
+		org.junit.jupiter.api.Assertions.assertDoesNotThrow(this::runAsync);
+		assertEquals(1, calls[0]);
+		assertEquals(List.of(secondary), List.of(original.getSuppressed()));
+		verify(logger).log(Level.WARNING, "Failed to clean permissions for Alex", original);
+		assertTrue(service.startClean(PLAYER, "Alex", callback));
+	}
+
+	@Test
+	void ordinaryWorkerFailureRetainsRejectedNotificationAndAllowsRetry() {
+		IllegalStateException original = new IllegalStateException("provider unavailable");
+		IllegalArgumentException secondary = new IllegalArgumentException("scheduler stopped");
+		luckPerms.when(LuckPermsProvider::get).thenThrow(original);
+		when(scheduler.runTask(eq(plugin), any(Runnable.class))).thenThrow(secondary);
+		assertTrue(service.startClean(PLAYER, "Alex", callback));
+		org.junit.jupiter.api.Assertions.assertDoesNotThrow(this::runAsync);
+		assertEquals(List.of(secondary), List.of(original.getSuppressed()));
+		assertTrue(results.isEmpty());
+		assertTrue(service.startClean(PLAYER, "Alex", callback));
+	}
+
 	private void givenNodes(Node... nodes) {
 		when(data.toCollection()).thenReturn(List.of(nodes));
 	}
