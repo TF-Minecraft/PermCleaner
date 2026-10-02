@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.bukkit.Bukkit;
@@ -14,6 +16,7 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.IllegalPluginAccessException;
 
 import net.tfminecraft.permcleaner.PermCleaner;
 import net.tfminecraft.permcleaner.lp.CleanResult;
@@ -43,10 +46,10 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 		String sub = args[0].toLowerCase(Locale.ROOT);
 		switch (sub) {
 			case "reload" -> reload(sender);
-			case "status" -> status(sender, args);
-			case "inspect" -> inspect(sender, args);
-			case "clean" -> clean(sender, args, false);
-			case "force" -> clean(sender, args, true);
+			case "status" -> resolveTarget(sender, args, target -> status(sender, target));
+			case "inspect" -> resolveTarget(sender, args, target -> inspect(sender, target));
+			case "clean" -> resolveTarget(sender, args, target -> clean(sender, target, false));
+			case "force" -> resolveTarget(sender, args, target -> clean(sender, target, true));
 			default -> sender.sendMessage(ChatColor.RED + USAGE);
 		}
 		return true;
@@ -64,11 +67,7 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 
 	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
 	@SuppressWarnings("deprecation")
-	private void status(CommandSender sender, String[] args) {
-		Target target = resolveTarget(sender, args);
-		if (target == null) {
-			return;
-		}
+	private void status(CommandSender sender, Target target) {
 		String stored = plugin.stamps() == null
 				? null
 				: plugin.stamps().getSeason(target.uuid).orElse(null);
@@ -86,11 +85,7 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 
 	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
 	@SuppressWarnings("deprecation")
-	private void inspect(CommandSender sender, String[] args) {
-		Target target = resolveTarget(sender, args);
-		if (target == null) {
-			return;
-		}
+	private void inspect(CommandSender sender, Target target) {
 		sender.sendMessage(ChatColor.GREEN + "Inspecting " + ChatColor.WHITE + target.name + ChatColor.GREEN + "...");
 		plugin.cleaner().inspect(target.uuid, result -> {
 			if (!sender.equals(Bukkit.getConsoleSender()) && sender instanceof Player player && !player.isOnline()) {
@@ -120,9 +115,9 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 
 	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
 	@SuppressWarnings("deprecation")
-	private void clean(CommandSender sender, String[] args, boolean force) {
-		Target target = resolveTarget(sender, args);
-		if (target == null) {
+	private void clean(CommandSender sender, Target target, boolean force) {
+		if (plugin.seasonId().isBlank()) {
+			sender.sendMessage(ChatColor.RED + "Cleaning is disabled: season-id is blank.");
 			return;
 		}
 		if (!force && plugin.stamps() != null && !plugin.stamps().needsClean(target.uuid, plugin.seasonId())) {
@@ -148,26 +143,63 @@ public final class PermCleanerCommand implements CommandExecutor, TabCompleter {
 
 	// Keep the existing legacy text representation, formatting, and exact-string comparisons.
 	@SuppressWarnings("deprecation")
-	private Target resolveTarget(CommandSender sender, String[] args) {
+	private void resolveTarget(CommandSender sender, String[] args, Consumer<Target> resolved) {
 		if (args.length < 2) {
 			if (sender instanceof Player player) {
-				return new Target(player.getUniqueId(), player.getName());
+				resolved.accept(new Target(player.getUniqueId(), player.getName()));
+			} else {
+				sender.sendMessage(ChatColor.RED + "Console must specify a player.");
 			}
-			sender.sendMessage(ChatColor.RED + "Console must specify a player.");
-			return null;
+			return;
 		}
-		Player online = Bukkit.getPlayerExact(args[1]);
+		String name = args[1];
+		if (name.isBlank()) {
+			sender.sendMessage(ChatColor.RED + "Unknown player " + name);
+			return;
+		}
+		Player online = Bukkit.getPlayerExact(name);
 		if (online != null) {
-			return new Target(online.getUniqueId(), online.getName());
+			resolved.accept(new Target(online.getUniqueId(), online.getName()));
+			return;
 		}
-		@SuppressWarnings("deprecation")
-		OfflinePlayer offline = Bukkit.getOfflinePlayer(args[1]);
+		OfflinePlayer cached = Bukkit.getOfflinePlayerIfCached(name);
+		if (cached != null) {
+			resolveOffline(sender, name, cached, resolved);
+			return;
+		}
+
+		try {
+			// Paper's resolver also honors proxy online-mode and offline UUID policy.
+			CompletableFuture.supplyAsync(() -> Bukkit.getPlayerUniqueId(name),
+				task -> Bukkit.getScheduler().runTaskAsynchronously(plugin, task)).whenComplete((uuid, failure) -> {
+				if (!plugin.isEnabled()) return;
+				try {
+					Bukkit.getScheduler().runTask(plugin, () -> {
+						if (!plugin.isEnabled() || (sender instanceof Player player && !player.isOnline())) return;
+						if (failure != null) {
+							sender.sendMessage(ChatColor.RED + "Player lookup failed for " + name + ". Please try again.");
+						} else if (uuid == null) {
+							sender.sendMessage(ChatColor.RED + "Unknown player " + name);
+						} else {
+							resolveOffline(sender, name, Bukkit.getOfflinePlayer(uuid), resolved);
+						}
+					});
+				} catch (IllegalPluginAccessException ignored) {
+					// The plugin was disabled between completing the lookup and scheduling the result.
+				}
+			});
+		} catch (IllegalPluginAccessException ignored) {
+			// The plugin was disabled before the lookup could be submitted.
+		}
+	}
+
+	@SuppressWarnings("deprecation")
+	private void resolveOffline(CommandSender sender, String name, OfflinePlayer offline, Consumer<Target> resolved) {
 		if (offline.hasPlayedBefore() && offline.getUniqueId() != null) {
-			String name = offline.getName() != null ? offline.getName() : args[1];
-			return new Target(offline.getUniqueId(), name);
+			resolved.accept(new Target(offline.getUniqueId(), offline.getName() != null ? offline.getName() : name));
+		} else {
+			sender.sendMessage(ChatColor.RED + "Unknown player " + name);
 		}
-		sender.sendMessage(ChatColor.RED + "Unknown player " + args[1]);
-		return null;
 	}
 
 	@Override

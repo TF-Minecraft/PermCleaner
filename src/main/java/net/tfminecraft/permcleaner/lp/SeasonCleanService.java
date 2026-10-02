@@ -25,7 +25,7 @@ public final class SeasonCleanService {
 	}
 
 	public void consider(Player player, World world) {
-		if (player == null || !plugin.isEnabled()) {
+		if (player == null || !plugin.isEnabled() || plugin.seasonId().isBlank()) {
 			return;
 		}
 		if (!worldMatches(world)) {
@@ -50,91 +50,112 @@ public final class SeasonCleanService {
 	}
 
 	/**
-	 * @return false if a clean is already running for this uuid
+	 * @return false if disabled, the season is blank, the uuid is null, or a clean is already running
 	 */
 	public boolean startClean(UUID uuid, String name, Consumer<CleanResult> onMain) {
 		if (uuid == null || !plugin.isEnabled()) {
 			return false;
 		}
-		if (!inFlight.add(uuid)) {
+		String seasonId = plugin.seasonId();
+		if (seasonId.isBlank() || !inFlight.add(uuid)) {
 			return false;
 		}
-		String seasonId = plugin.seasonId();
-		Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> cleanAsync(uuid, name, seasonId, onMain));
-		return true;
+		try {
+			Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> cleanAsync(uuid, name, seasonId, onMain));
+			return true;
+		} catch (RuntimeException | Error failure) {
+			inFlight.remove(uuid);
+			throw failure;
+		}
 	}
 
 	public void inspect(UUID uuid, Consumer<CleanResult> onMain) {
 		Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+			CleanResult result;
 			try {
 				LuckPerms api = LuckPermsProvider.get();
 				User user = api.getUserManager().loadUser(uuid).join();
 				if (user == null) {
 					throw new IllegalStateException("loadUser returned null for " + uuid);
 				}
-				CleanResult result = UserPermissionCleaner.inspect(user, plugin.keepList());
-				runMain(() -> {
-					if (onMain != null) {
-						onMain.accept(result);
-					}
-				});
+				result = UserPermissionCleaner.inspect(user, plugin.keepList());
 			} catch (Exception e) {
 				plugin.getLogger().log(Level.WARNING, "Failed to inspect permissions for " + uuid, e);
-				runMain(() -> {
-					if (onMain != null) {
-						onMain.accept(null);
-					}
-				});
+				result = null;
 			}
+			CleanResult delivered = result;
+			runMain(() -> {
+				if (onMain != null) {
+					onMain.accept(delivered);
+				}
+			});
 		});
 	}
 
 	private void cleanAsync(UUID uuid, String name, String seasonId, Consumer<CleanResult> onMain) {
+		CleanResult result;
 		try {
 			LuckPerms api = LuckPermsProvider.get();
 			User user = api.getUserManager().loadUser(uuid).join();
 			if (user == null) {
 				throw new IllegalStateException("loadUser returned null for " + uuid);
 			}
-			CleanResult result = UserPermissionCleaner.apply(user, plugin.keepList());
-			if (result.changed()) {
-				api.getUserManager().saveUser(user).join();
-			}
-			if (!plugin.isEnabled()) {
-				inFlight.remove(uuid);
-				runMain(() -> {
-					if (onMain != null) {
-						onMain.accept(null);
-					}
-				});
-				return;
-			}
-			Bukkit.getScheduler().runTask(plugin, () -> stampAndFinish(uuid, name, seasonId, result, onMain));
+			result = UserPermissionCleaner.apply(user, plugin.keepList());
+			// A previous failed save may have left this loaded user already mutated.
+			// Persist even a no-op retry before recording the season as complete.
+			api.getUserManager().saveUser(user).join();
 		} catch (Exception e) {
+			notifyFailure(uuid, onMain, e);
 			plugin.getLogger().log(Level.WARNING, "Failed to clean permissions for " + name, e);
-			inFlight.remove(uuid);
-			runMain(() -> {
-				if (onMain != null) {
-					onMain.accept(null);
-				}
-			});
+			return;
+		} catch (Error failure) {
+			notifyFailure(uuid, onMain, failure);
+			throw failure;
 		}
+		if (!plugin.isEnabled()) {
+			finishFailed(uuid, onMain);
+			return;
+		}
+		try {
+			Bukkit.getScheduler().runTask(plugin, () -> stampAndFinish(uuid, name, seasonId, result, onMain));
+		} catch (RuntimeException | Error failure) {
+			notifyFailure(uuid, onMain, failure);
+			throw failure;
+		}
+	}
+
+	private void notifyFailure(UUID uuid, Consumer<CleanResult> onMain, Throwable failure) {
+		try {
+			finishFailed(uuid, onMain);
+		} catch (RuntimeException | Error notificationFailure) {
+			if (notificationFailure != failure) failure.addSuppressed(notificationFailure);
+		}
+	}
+
+	private void finishFailed(UUID uuid, Consumer<CleanResult> onMain) {
+		inFlight.remove(uuid);
+		runMain(() -> {
+			if (onMain != null) {
+				onMain.accept(null);
+			}
+		});
 	}
 
 	private void stampAndFinish(UUID uuid, String name, String seasonId, CleanResult result,
 			Consumer<CleanResult> onMain) {
 		try {
-			if (plugin.isEnabled() && plugin.stamps() != null) {
-				plugin.stamps().setSeason(uuid, seasonId);
-				plugin.getLogger().info(name + " season " + seasonId + " removed " + result.removed());
+			CleanResult delivered = result;
+			try {
+				if (plugin.isEnabled() && plugin.stamps() != null) {
+					plugin.stamps().setSeason(uuid, seasonId);
+					plugin.getLogger().info(name + " season " + seasonId + " removed " + result.removed());
+				}
+			} catch (Exception e) {
+				plugin.getLogger().log(Level.WARNING, "Failed to stamp season for " + name, e);
+				delivered = null;
 			}
 			if (onMain != null) {
-				onMain.accept(result);
-			}
-		} catch (Exception e) {
-			plugin.getLogger().log(Level.WARNING, "Failed to stamp season for " + name, e);
-			if (onMain != null) {
-				onMain.accept(null);
+				onMain.accept(delivered);
 			}
 		} finally {
 			inFlight.remove(uuid);
