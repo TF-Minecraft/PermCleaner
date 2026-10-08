@@ -25,7 +25,16 @@ Technical documentation is maintained in [TF-Minecraft/Docs](https://github.com/
 
 ## Tests and coverage
 
-Run `mvn clean verify` with Java 21 after installing the pinned dependencies. JaCoCo checks 100% executable runtime line coverage with no production-code exclusions. Instruction and branch coverage are reported separately in `target/site/jacoco/`; CI uploads the report for every build and release.
+Run `mvn clean verify` with Java 21 after installing the pinned dependencies
+using the [build guide](https://github.com/TF-Minecraft/Docs/blob/main/projects/PermCleaner/README.md#build-and-dependencies).
+JUnit 5 and Mockito cover permission filtering, season stamps, commands,
+listeners, lifecycle, and asynchronous cleanup. Surefire test results are in
+`target/surefire-reports/`.
+
+JaCoCo enforces 100% executable runtime line coverage with no production-code
+exclusions. Instruction and branch coverage are reported separately in
+`target/site/jacoco/`; build and release CI upload generated coverage reports.
+Mocks do not verify a live LuckPerms server or its shared storage.
 
 ## License
 
